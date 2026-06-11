@@ -1,0 +1,11 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Snewzy
+Comment=Personal AI News Hub
+Exec=/home/greyursus/workspace/projects/snewzy/launch.sh
+Path=/home/greyursus/workspace/projects/snewzy
+Icon=/home/greyursus/workspace/projects/snewzy/icon.png
+Terminal=false
+Categories=News;Internet;
+StartupNotify=true

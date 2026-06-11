@@ -1,0 +1,81 @@
+{
+    "whitelist_sites": [
+        {
+            "name": "TomsHardware",
+            "rss_url": "https://www.tomshardware.com/feed/",
+            "priority_boost": false
+        },
+        {
+            "name": "TechCrunch",
+            "rss_url": "https://techcrunch.com/feed/",
+            "priority_boost": false
+        },
+        {
+            "name": "404media",
+            "rss_url": "https://www.404media.co/feed/",
+            "priority_boost": false
+        },
+        {
+            "name": "9to5linux",
+            "rss_url": "https://www.9to5linux.com/feed/",
+            "priority_boost": false
+        },
+        {
+            "name": "supplychaintechnews",
+            "rss_url": "https://www.supplychaintechnews.com/feed/",
+            "priority_boost": false   
+        },
+        {
+            "name": "wired",
+            "rss_url": "https://www.wired.com/feed/",
+            "priority_boost": false   
+        }
+    ],
+    "keywords": {
+"keywords": {
+    "priority_1": [
+        "nvidia",
+        "amd",
+        "data breach",
+        "security flaw",
+        "zero-day",
+        "vulnerability",
+        "ransomware",
+        "remote work",
+        "remote programming",
+        "work from home",
+        "distributed team"
+    ],
+    "priority_2": [
+        "anthropic",
+        "funding round",
+        "acquired",
+        "IPO",
+        "investment",
+        "valuation",
+        "startup",
+        "venture capital",
+        "merger",
+        "quarterly earnings"
+    ],
+    "priority_3": [
+        "product launch",
+        "new feature",
+        "review",
+        "benchmark",
+        "performance test",
+        "announced",
+        "update"
+    ]
+}
+    },
+    "api": {
+        "provider": "ollama",
+        "model": "llama3.2:b",
+        "local_model": "llama3.2:3b"
+    },
+    "settings": {
+        "scan_interval_hours": 6,
+        "max_articles_per_scan": 50
+    }
+}
