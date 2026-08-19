@@ -5,7 +5,7 @@ Automated news aggregation and summarization pipeline using local LLMs, with liv
 ## What It Does
 
 1. Fetches articles from 10 RSS sources every 6 hours
-2. Summarizes them using a local Ollama model (qwen3:4b on Pantheon)
+2. Summarizes them using a local Ollama model (qwen3:4b on Ollama)
 3. Exports curated two-tier output (Breaking News / General News) to JSON
 4. Deploys the updated website to Cloudflare automatically via Wrangler
 5. Live site at greyursusconsulting.com updates with no manual intervention
