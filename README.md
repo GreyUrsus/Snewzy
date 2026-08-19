@@ -1,45 +1,81 @@
-# Snewzy - Personal AI News Hub
+# Snewzy — Local LLM News Pipeline
 
-An agent-based news aggregator that fetches RSS feeds, prioritizes articles by keyword, summarizes them with local AI, and presents them in a clean GUI.
+Automated news aggregation and summarization pipeline using local LLMs, with live website integration and automatic Cloudflare deployment.
 
-## Features
+## What It Does
 
-- **Fetcher Agent**: Automatically downloads articles from RSS feeds
-- **Priority Engine**: Sorts articles by keyword importance (1-3)
-- **Summarizer Agent**: Uses local LLM (Ollama) for zero-cost summarization
-- **Desktop GUI**: View articles by priority with color-coded cards
+1. Fetches articles from 10 RSS sources every 6 hours
+2. Summarizes them using a local Ollama model (qwen3:4b on Pantheon)
+3. Exports curated two-tier output (Breaking News / General News) to JSON
+4. Deploys the updated website to Cloudflare automatically via Wrangler
+5. Live site at greyursusconsulting.com updates with no manual intervention
 
-## Quick Start
+## Architecture
 
-### Prerequisites
+- **Fetcher:** Pulls RSS feeds, calculates priority based on keyword matching
+- **Summarizer:** Calls local Ollama instance for each article
+- **Exporter:** Writes curated JSON to website data directory
+- **Deploy:** Wrangler CLI pushes updated site to Cloudflare Worker
+- **Scheduler:** threading.Timer drives 6-hour auto-refresh cycle; manual refresh button resets the timer
+
+## Configuration
+
+Edit `config.json` to modify:
+- RSS sources (`whitelist_sites`)
+- Keyword priorities (`keywords.priority_1/2/3`)
+- Ollama endpoint and model (`api.provider`, `api.model`)
+- Scan interval and article limits (`settings.scan_interval_hours`, `settings.max_articles_per_scan`)
+
+## Requirements
 
 - Python 3.10+
-- Ollama installed locally
+- Ollama running on local network (default: 192.168.1.183:11434)
+- Node.js 22+ and Wrangler 4.x (for Cloudflare auto-deploy)
+- Cloudflare API token stored in `~/.snewzy_env`
 
-### Installation
+## Setup
 
 ```bash
-# Clone repository
-cd snewzy
-
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate  # Linux/Mac
-# or: venv\Scripts\activate  # Windows
-
-# Install dependencies
+python3 -m venv venv
+source venv/bin/activate
 pip install -r requirements.txt
+```
 
-# Pull Ollama model
-ollama pull llama3.2:3b
+## Usage
 
-## Launch Methods
-
-**Desktop Icon (Recommended):**
-Double-click Snewzy icon on desktop
-
-**Terminal:**
+**Manual update:**
 ```bash
-cd ~/workspace/projects/snewzy
-source news_hub/venv/bin/activate
-python -m news_hub.main
+python3 -m news_hub.main --update
+```
+
+**GUI mode:**
+```bash
+python3 -m news_hub.display
+```
+
+**Automated mode:**
+The GUI's 6-hour timer handles this automatically. Manual refresh button triggers an immediate update and resets the countdown.
+
+## Project Structure
+
+```
+snewzy/
+├── config.json              # RSS sources, keywords, API settings
+├── requirements.txt         # Python dependencies
+├── news_hub/
+│   ├── main.py              # Entry point, orchestrates all steps
+│   ├── data/                # SQLite database (gitignored)
+│   └── modules/
+│       ├── config_loader.py # Pydantic config validation
+│       ├── database.py      # SQLite operations
+│       ├── fetcher.py       # RSS feed fetching
+│       ├── summarizer.py    # Ollama LLM summarization
+│       ├── exporter.py      # JSON export for website
+│       └── display.py       # Flet GUI with auto-refresh timer
+```
+
+## Notes
+
+- Database lives on local disk (`~/snewzy_data/news_hub.db`), not the network share, to avoid SQLite locking issues with CIFS mounts
+- Cloudflare deploy requires `wrangler.jsonc` in the website directory with the correct Worker name and account ID
+- The website is a Cloudflare Worker with static assets, not a Pages project
