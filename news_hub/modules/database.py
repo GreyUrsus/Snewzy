@@ -7,7 +7,7 @@ from typing import Optional, List, Tuple
 
 
 #Database file location: news_hub/data/news_hub.db
-DATABASE_PATH = Path(__file__).parent.parent/ "data" /"news_hub.db"
+DATABASE_PATH = Path.home() / "snewzy_data" / "news_hub.db"
 
 
 def init_database() -> None:
@@ -47,6 +47,9 @@ def init_database() -> None:
         CREATE INDEX IF NOT EXISTS idx_priority_status
         ON articles(priority, status)
     """)
+
+    # One-time migration to reclassify any existing priority 3 articles as priority 2
+    cursor.execute("UPDATE articles SET priority = 2 WHERE priority = 3")
 
     conn.commit()
     conn.close( )
@@ -174,4 +177,4 @@ if __name__ == "__main__":
                 content="Different content",
                 priority=2
             )
-            print(f"Duplicate blocked correctly: {not test_duplicate}")    
+            print(f"Duplicate blocked correctly: {not test_duplicate}")

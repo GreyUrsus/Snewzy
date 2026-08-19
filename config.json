@@ -1,8 +1,8 @@
 {
     "whitelist_sites": [
         {
-            "name": "TomsHardware",
-            "rss_url": "https://www.tomshardware.com/feed/",
+            "name": "TheRegister-AI",
+            "rss_url": "https://www.theregister.com/software/ai_ml/headlines.atom",
             "priority_boost": false
         },
         {
@@ -21,58 +21,76 @@
             "priority_boost": false
         },
         {
-            "name": "supplychaintechnews",
-            "rss_url": "https://www.supplychaintechnews.com/feed/",
-            "priority_boost": false   
+            "name": "ZDNet",
+            "rss_url": "https://www.zdnet.com/news/rss.xml",
+            "priority_boost": false
         },
         {
             "name": "wired",
             "rss_url": "https://www.wired.com/feed/",
-            "priority_boost": false   
+            "priority_boost": false
+        },
+        {
+            "name": "arxiv-cs.AI",
+            "rss_url": "https://rss.arxiv.org/rss/cs.AI",
+            "priority_boost": false
+        },
+        {
+            "name": "deepmind-blog",
+            "rss_url": "https://deepmind.com/blog/rss.xml",
+            "priority_boost": false
+        },
+        {
+            "name": "Engadget-fallback",
+            "rss_url": "https://www.engadget.com/rss.xml",
+            "priority_boost": false
+        },
+        {
+            "name": "hugging-face-blog",
+            "rss_url": "https://huggingface.co/blog/feed.xml",
+            "priority_boost": false
         }
     ],
     "keywords": {
-"keywords": {
-    "priority_1": [
-        "nvidia",
-        "amd",
-        "data breach",
-        "security flaw",
-        "zero-day",
-        "vulnerability",
-        "ransomware",
-        "remote work",
-        "remote programming",
-        "work from home",
-        "distributed team"
-    ],
-    "priority_2": [
-        "anthropic",
-        "funding round",
-        "acquired",
-        "IPO",
-        "investment",
-        "valuation",
-        "startup",
-        "venture capital",
-        "merger",
-        "quarterly earnings"
-    ],
-    "priority_3": [
-        "product launch",
-        "new feature",
-        "review",
-        "benchmark",
-        "performance test",
-        "announced",
-        "update"
-    ]
-}
+        "priority_1": [
+            "nvidia",
+            "amd",
+            "data breach",
+            "security flaw",
+            "zero-day",
+            "vulnerability",
+            "ransomware",
+            "remote work",
+            "remote programming",
+            "work from home",
+            "distributed team"
+        ],
+        "priority_2": [
+            "anthropic",
+            "funding round",
+            "acquired",
+            "IPO",
+            "investment",
+            "valuation",
+            "startup",
+            "venture capital",
+            "merger",
+            "quarterly earnings"
+        ],
+        "priority_3": [
+            "product launch",
+            "new feature",
+            "review",
+            "benchmark",
+            "performance test",
+            "announced",
+            "update"
+        ]
     },
     "api": {
         "provider": "ollama",
-        "model": "llama3.2:b",
-        "local_model": "llama3.2:3b"
+        "model": "qwen3:4b",
+        "local_model": "qwen3:4b"
     },
     "settings": {
         "scan_interval_hours": 6,

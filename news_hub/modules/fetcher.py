@@ -18,7 +18,10 @@ def fetch_feed(url: str) -> List[dict]:
         List of article dictionaries from the feed
     """
     try:
-        parsed = feedparser.parse(url)
+        parsed = feedparser.parse(
+            url,
+            request_headers={"User-Agent": "Mozilla/5.0 (compatible; Snewzy/1.0; +https://github.com/)"},
+        )
         return parsed.entries
     except Exception as e:
         print(f"Error fetching feed {url}: {e}")
@@ -32,15 +35,8 @@ def calculate_priority(title: str, content: str, keywords) -> int:
         if keyword.lower() in text:
             return 1
     
-    for keyword in keywords.priority_2:
-        if keyword.lower() in text:
-            return 2
-    
-    for keyword in keywords.priority_3:
-        if keyword.lower() in text:
-            return 3
-    
-    return 3
+    # Check if site has priority_boost set (overriding all else)
+    return 2  # General news
 
 def process_site(site: SiteConfig, keywords, max_articles: int) -> Tuple[int, int]:
     """Process a single news site.

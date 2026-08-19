@@ -22,6 +22,7 @@ class APIConfig(BaseModel):
     """AI service configuration."""
     provider: str
     model: str
+    local_model: str
 
 class SettingsConfig(BaseModel):
     """Application behavior settings."""

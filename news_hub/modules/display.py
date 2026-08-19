@@ -1,9 +1,39 @@
-"""Display module - simple GUI for viewing summarized news."""
+"""Display module - simple GUI for viewing summarized news.
+
+This module renders the Flet-based desktop UI for Snewzy: article cards
+grouped by priority, a settings overlay, and a "Refresh News" control.
+Refreshing (whether user-triggered or on the periodic auto-refresh timer)
+shells out to `python -m news_hub.main --update`, which can take several
+minutes. To keep the GUI responsive, that subprocess call always runs on a
+background thread; a module-level lock prevents overlapping runs, and a
+module-level `threading.Timer` drives the periodic auto-refresh, resetting
+itself on every manual or automatic refresh so the two mechanisms never
+double-fire.
+"""
+
+import subprocess
+import sys
+import threading
+from typing import List, Optional, Tuple
 
 import flet as ft
-from typing import List, Tuple
+
+from .config_loader import load_config
 from .database import get_articles_by_priority, init_database
 from .settings_dialog import create_settings_dialog
+
+# ---------------------------------------------------------------------------
+# Module-level refresh coordination state.
+#
+# This is intentionally global/singleton state: it must be shared across
+# every rebuild of main_page() (which recreates all local UI controls) so
+# that "is a refresh already running?" and "when does the next automatic
+# refresh fire?" stay consistent for the lifetime of the running app.
+# ---------------------------------------------------------------------------
+_refresh_lock: threading.Lock = threading.Lock()
+_timer_lock: threading.Lock = threading.Lock()
+_auto_refresh_timer: Optional[threading.Timer] = None
+
 
 def create_article_card(article: Tuple, on_read: callable = None) -> ft.Card:
     """Create a UI card for a single article."""
@@ -19,8 +49,7 @@ def create_article_card(article: Tuple, on_read: callable = None) -> ft.Card:
     
     priority_colors = {
         1: ft.Colors.RED_100,
-        2: ft.Colors.ORANGE_100,
-        3: ft.Colors.GREEN_100
+        2: ft.Colors.ORANGE_100
     }
     
     bg_color = priority_colors.get(priority, ft.Colors.GREY_100)
@@ -77,7 +106,7 @@ def create_article_card(article: Tuple, on_read: callable = None) -> ft.Card:
 def create_priority_section(page: ft.Page, priority: int, articles: List[Tuple],
                             on_article_read: callable) -> ft.Column:
     """Create a section for a priority level with read functionality"""
-    priority_names = {1: "Crtical", 2: "Important", 3: "General"}
+    priority_names = {1: "Breaking News", 2: "General News"}
     name = priority_names.get(priority, f"Priority {priority}")
 
     def refresh_section():
@@ -105,12 +134,167 @@ def create_priority_section(page: ft.Page, priority: int, articles: List[Tuple],
     ], spacing=10)
 
 
+def _cancel_auto_refresh_timer() -> None:
+    """Cancel any pending automatic-refresh timer, if one is scheduled.
+
+    Thread-safe: guarded by `_timer_lock` so a timer firing on the
+    background thread can't race with a manual click cancelling/rescheduling
+    it. Safe to call even when no timer is currently pending (a no-op).
+
+    Returns:
+        None
+    """
+    global _auto_refresh_timer
+    with _timer_lock:
+        if _auto_refresh_timer is not None:
+            _auto_refresh_timer.cancel()
+            _auto_refresh_timer = None
+
+
+def _schedule_auto_refresh(page: ft.Page, status_text: ft.Text, interval_hours: float) -> None:
+    """(Re)start the periodic auto-refresh countdown.
+
+    Cancels any existing pending timer first, so this both "schedules the
+    next automatic refresh" and "resets the 6-hour countdown" in one call -
+    used both at page load and after every completed manual/automatic
+    refresh.
+
+    Args:
+        page: The Flet page the eventual refresh should act on.
+        status_text: The status Text control the eventual refresh should
+            update to show progress.
+        interval_hours: Hours to wait before the next automatic refresh
+            (normally config.settings.scan_interval_hours).
+
+    Returns:
+        None
+    """
+    global _auto_refresh_timer
+    _cancel_auto_refresh_timer()
+    interval_seconds = max(interval_hours, 0.0) * 3600
+    timer = threading.Timer(
+        interval_seconds, _run_refresh, args=(page, status_text, interval_hours, False)
+    )
+    timer.daemon = True
+    with _timer_lock:
+        _auto_refresh_timer = timer
+    timer.start()
+
+
+def _update_status(status_text: ft.Text, message: str, color: str) -> None:
+    """Update a status Text control's value/color and push just that change.
+
+    Uses the control's own `.update()` rather than `page.update()` so other
+    parts of the UI stay fully interactive while a background refresh runs.
+
+    Args:
+        status_text: The Text control to update.
+        message: New text to display.
+        color: Flet color for the text.
+
+    Returns:
+        None
+    """
+    status_text.value = message
+    status_text.color = color
+    status_text.update()
+
+
+def _run_refresh(
+    page: ft.Page,
+    status_text: ft.Text,
+    interval_hours: float,
+    manual: bool,
+    refresh_button: Optional[ft.ElevatedButton] = None,
+) -> None:
+    """Run the update subprocess and reflect progress, off the UI thread.
+
+    Meant to be invoked as the target of a `threading.Thread` (manual click)
+    or `threading.Timer` (automatic trigger) - never called directly on the
+    UI thread, since `subprocess.run` here blocks for up to 10 minutes.
+
+    Overlap protection: attempts a non-blocking acquire of the module-level
+    `_refresh_lock`; if a refresh (manual or automatic) is already running,
+    this call is ignored instead of starting a second, concurrent run.
+
+    Args:
+        page: The Flet page to update/rebuild on completion.
+        status_text: Status Text control to update with progress/results.
+        interval_hours: Hours until the next automatic refresh; used to
+            reschedule the auto-refresh timer once this run finishes.
+        manual: True if this run was triggered by the "Refresh News"
+            button (used only to decide whether to surface a "busy"
+            message when a run is already in progress).
+        refresh_button: Optional button control to disable/re-enable while
+            this refresh is in progress, so the user gets visual feedback
+            that a run is active without blocking other interactions.
+
+    Returns:
+        None
+    """
+    acquired = _refresh_lock.acquire(blocking=False)
+    if not acquired:
+        if manual:
+            _update_status(status_text, "Refresh already in progress...", ft.Colors.ORANGE_500)
+        return
+
+    # A refresh is starting now (manual or automatic) - reset the periodic
+    # countdown immediately so the timer can't also fire shortly after.
+    _cancel_auto_refresh_timer()
+
+    rebuilt = False
+    if refresh_button is not None:
+        refresh_button.disabled = True
+        refresh_button.update()
+
+    try:
+        _update_status(status_text, "Updating... (running in background)", ft.Colors.ORANGE_500)
+        try:
+            result = subprocess.run(
+                [sys.executable, "-m", "news_hub.main", "--update"],
+                capture_output=True,
+                text=True,
+                timeout=600,  # 10 minutes
+            )
+            if result.returncode == 0:
+                _update_status(status_text, "Update complete. Refreshing...", ft.Colors.GREEN_500)
+                rebuilt = True
+                page.clean()
+                main_page(page)  # rebuild schedules its own fresh auto-refresh timer
+            else:
+                error_msg = result.stderr[-200:] if result.stderr else "Unknown error"
+                _update_status(status_text, f"Update failed: {error_msg}", ft.Colors.RED_400)
+        except subprocess.TimeoutExpired:
+            _update_status(status_text, "Update timed out (10 min)", ft.Colors.RED_400)
+        except OSError as ex:
+            _update_status(status_text, f"Error: {ex}", ft.Colors.RED_400)
+    finally:
+        _refresh_lock.release()
+        if refresh_button is not None and not rebuilt:
+            refresh_button.disabled = False
+            refresh_button.update()
+        if not rebuilt:
+            # No rebuild happened (failure/timeout/busy path never reaches
+            # here) - reschedule the next automatic refresh ourselves,
+            # since main_page() won't be re-run to do it for us.
+            _schedule_auto_refresh(page, status_text, interval_hours)
+
+
 def main_page(page: ft.Page):
     """Main application page."""
     page.title = "Snewzy - Personal News Hub"
     page.theme_mode = ft.ThemeMode.LIGHT
     page.padding = 20
-    
+
+    try:
+        app_config = load_config()
+        interval_hours = app_config.settings.scan_interval_hours
+    except (FileNotFoundError, ValueError) as ex:
+        print(f"Could not load config for scan interval, defaulting to 6h: {ex}")
+        interval_hours = 6
+
+    status_text = ft.Text("", size=13)
+
     # ========== BUTTON FUNCTIONS ==========
     
     def open_settings(e):
@@ -127,7 +311,7 @@ def main_page(page: ft.Page):
         def open_file(e):
             try:
                 subprocess.Popen(["xdg-open", config_path])
-            except Exception as ex:
+            except OSError as ex:
                 print(f"Could not open file: {ex}")
         
         overlay_container = ft.Container(
@@ -153,61 +337,35 @@ def main_page(page: ft.Page):
         
         page.add(overlay_container)
         page.update()
-    
-    def refresh_news(e):
-        """Run --update in background, then reload GUI."""
-        import subprocess
-        import sys
-        
-        # Show updating status
-        status_text = ft.Text("Updating... (this may take a minute)", 
-                             color=ft.Colors.ORANGE_500)
-        page.add(status_text)
-        page.update()
-        
-        try:
-            # Run update process
-            result = subprocess.run(
-                [sys.executable, "-m", "news_hub.main", "--update"],
-                capture_output=True,
-                text=True,
-                timeout=600  # Timeout: 5 minutes may not be enough for 15 articles × 30s each = 7.5 min.
 
-            )
-            
-            # Remove status message
-            page.remove(status_text)
-            
-            if result.returncode == 0:
-                # Success - clear and rebuild page
-                page.clean()
-                main_page(page)
-            else:
-                # Show error
-                error_msg = result.stderr[-200:] if result.stderr else "Unknown error"
-                page.add(ft.Text(f"Update failed: {error_msg}", 
-                               color=ft.Colors.RED_400))
-                page.update()
-                
-        except subprocess.TimeoutExpired:
-            page.remove(status_text)
-            page.add(ft.Text("Update timed out (5 min)", color=ft.Colors.RED_400))
-            page.update()
-        except Exception as ex:
-            page.remove(status_text)
-            page.add(ft.Text(f"Error: {str(ex)}", color=ft.Colors.RED_400))
-            page.update()
-    
+    def handle_refresh_click(e):
+        """Kick off a manual refresh on a background thread.
+
+        Does not block: the actual subprocess call happens in `_run_refresh`
+        on a separate thread, so the button handler returns immediately and
+        the rest of the GUI stays responsive while it runs.
+        """
+        threading.Thread(
+            target=_run_refresh,
+            args=(page, status_text, interval_hours, True, refresh_button),
+            daemon=True,
+        ).start()
+
     # ========== UI BUILDING ==========
     
     # Ensure database exists
     init_database()
     
-    # Fetch articles
+    # Fetch articles by priority
     p1_articles = get_articles_by_priority(1, status="summarized", limit=5)
     p2_articles = get_articles_by_priority(2, status="summarized", limit=5)
-    p3_articles = get_articles_by_priority(3, status="summarized", limit=5)
-    
+
+    refresh_button = ft.ElevatedButton(
+        "Refresh News",
+        icon=ft.Icons.REFRESH,
+        on_click=handle_refresh_click,
+    )
+
     # Header with BOTH buttons
     header = ft.Row([
         ft.Column([
@@ -221,11 +379,7 @@ def main_page(page: ft.Page):
                 icon=ft.Icons.SETTINGS,
                 on_click=open_settings
             ),
-            ft.ElevatedButton(
-                "Refresh News",
-                icon=ft.Icons.REFRESH,
-                on_click=refresh_news  # ← NEW BUTTON
-            )
+            refresh_button
         ])
     ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN)
     
@@ -233,14 +387,19 @@ def main_page(page: ft.Page):
     page.add(
         ft.Column([
             header,
+            status_text,
             ft.Divider(),
             create_priority_section(page, 1, p1_articles, lambda e: None),
             ft.Divider(),
-            create_priority_section(page, 2, p2_articles, lambda e: None),
-            ft.Divider(),
-            create_priority_section(page, 3, p3_articles, lambda e: None)
+            create_priority_section(page, 2, p2_articles, lambda e: None)
         ], scroll=ft.ScrollMode.AUTO, expand=True)
     )
+
+    # Start (or restart) the periodic automatic-refresh countdown for this
+    # freshly built page/status control. Runs every `interval_hours` hours
+    # without any user interaction, on the same background-thread pattern as
+    # the manual button, and gets reset every time a refresh completes.
+    _schedule_auto_refresh(page, status_text, interval_hours)
 
 
 def run_display():

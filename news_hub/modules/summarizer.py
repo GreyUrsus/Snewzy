@@ -44,11 +44,11 @@ BULLET POINTS:
     return prompt
 
 
-def call_ollama(prompt: str, model: str = "llama3.2:3b") -> str:
+def call_ollama(prompt: str, model: str = "qwen3:4b") -> str:
     """Send prompt to local Ollama instance."""
     try:
         response = requests.post(
-            "http://localhost:11434/api/generate",
+            "http://192.168.1.183:11434/api/generate",
             json={
                 "model": model,
                 "prompt": prompt,
@@ -130,7 +130,7 @@ def run_summarizer(config: AppConfig, max_per_priority: int = 5) -> Dict[str, in
     print(f"Using local model: {model}")
     print("Make sure Ollama is running: ollama serve")
     
-    for priority in [1, 2, 3]:
+    for priority in [1, 2]:
         print(f"\nProcessing Priority {priority}...")
         articles = get_pending_articles(priority, max_per_priority)
         
