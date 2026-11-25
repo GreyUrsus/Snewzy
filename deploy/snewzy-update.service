@@ -1,0 +1,17 @@
+# Runs one Snewzy update (fetch -> summarize -> export -> deploy) with no GUI.
+# Started every 6 hours by snewzy-update.timer. See README "Run it on a schedule".
+#
+# Paths assume the project lives at ~/workspace/projects/snewzy with its venv
+# at news_hub/venv (the same layout launch.sh uses). Change them if yours differ.
+[Unit]
+Description=Snewzy news update for the Grey Ursus Live Demo
+# Wait for the network so the RSS feeds and Ollama are reachable
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/workspace/projects/snewzy
+ExecStart=%h/workspace/projects/snewzy/news_hub/venv/bin/python -m news_hub.main --update
+# Give the summarizer time; each article can take up to 2 minutes
+TimeoutStartSec=45min

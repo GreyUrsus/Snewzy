@@ -23,11 +23,24 @@ class APIConfig(BaseModel):
     provider: str
     model: str
     local_model: str
+    # Where Ollama listens. The OLLAMA_HOST environment variable wins over
+    # this, so the address can live outside the (public) repo if you prefer.
+    # The default keeps the address Snewzy has always used.
+    endpoint: str = "http://192.168.1.183:11434"
 
 class SettingsConfig(BaseModel):
     """Application behavior settings."""
     scan_interval_hours: int = 6
     max_articles_per_scan: int = 50
+    # Only stories published within this many days go to the website, so
+    # the "Breaking News" panel never shows months-old items.
+    export_max_age_days: int = 7
+    # Folder of the Grey Ursus website (the one `wrangler deploy` runs in).
+    # The export writes data/latest_news.json inside it and the deploy step
+    # deploys the same folder, so the two can't drift apart.
+    # Empty = keep the old behaviour (sibling "website" folder for the export,
+    # /mnt/artifacts/grey_ursus_consulting/website for the deploy).
+    website_dir: str = ""
 
 class AppConfig(BaseModel):
     """Root configuration container."""

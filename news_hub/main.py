@@ -37,7 +37,7 @@ def _read_cloudflare_token(env_path=CLOUDFLARE_ENV_FILE):
     raise ValueError("CLOUDFLARE_API_TOKEN not found in " + env_path)
 
 
-def _deploy_to_cloudflare():
+def _deploy_to_cloudflare(website_dir: str = ""):
     """Deploy the website via `wrangler deploy`.
 
     Returns a dict: {"success": bool, "url": str | None, "error": str | None}
@@ -55,7 +55,9 @@ def _deploy_to_cloudflare():
     try:
         result = subprocess.run(
             ["wrangler", "deploy"],
-            cwd=WEBSITE_DEPLOY_DIR,
+            # Deploy the folder set in config.json (settings.website_dir) when
+            # present, so it's the same folder the export just wrote into.
+            cwd=os.path.expanduser(website_dir) if website_dir else WEBSITE_DEPLOY_DIR,
             env=deploy_env,
             capture_output=True,
             text=True,
@@ -127,7 +129,7 @@ def fetch_and_summarize():
     print("\n[5/6] Exporting for website...")
     export_succeeded = False
     try:
-        export_results = export_for_website()
+        export_results = export_for_website(config)
         export_succeeded = True
         print(
             f"  ✓ Exported {export_results['breaking']} breaking, "
@@ -139,7 +141,7 @@ def fetch_and_summarize():
     # Deploy the updated website to Cloudflare (best-effort; never fails the cycle)
     print("\n[6/6] Deploying to Cloudflare...")
     try:
-        deploy_result = _deploy_to_cloudflare()
+        deploy_result = _deploy_to_cloudflare(config.settings.website_dir)
         if deploy_result["success"]:
             if deploy_result["url"]:
                 print(f"  ✓ Deploy succeeded: {deploy_result['url']}")
