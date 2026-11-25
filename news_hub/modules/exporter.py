@@ -104,7 +104,9 @@ def export_for_website(config: Optional[Any] = None) -> Dict[str, int]:
 
     Returns:
         A dict summarizing the export, e.g. {"breaking": 3, "general": 5},
-        with counts of articles actually written per tier.
+        with counts of articles actually written per tier. When there are no
+        fresh summarized articles, nothing is written and the dict also has
+        "skipped": True.
     """
     settings = getattr(config, "settings", None)
     max_age_days = getattr(settings, "export_max_age_days", DEFAULT_MAX_AGE_DAYS)
@@ -115,16 +117,32 @@ def export_for_website(config: Optional[Any] = None) -> Dict[str, int]:
     now = datetime.now(timezone.utc)
     cutoff = (now - timedelta(days=max_age_days)).isoformat()
 
-    breaking_rows = get_articles_by_priority(
-        1, status="summarized", limit=3, published_after=cutoff
-    )
-    general_rows = get_articles_by_priority(
-        2, status="summarized", limit=5, published_after=cutoff
-    )
+    # Leave out titles matching keywords.exclude_titles (coupon posts), in
+    # case some were saved before that filter existed. Ask the database for
+    # a few extra rows so the panels still fill up after filtering.
+    keywords = getattr(config, "keywords", None)
+    excluded = [w.lower() for w in getattr(keywords, "exclude_titles", ["coupon", "promo code", "discount code"])]
+
+    def _keep(rows, limit):
+        kept = [r for r in rows if not any(w in (r[_IDX_TITLE] or "").lower() for w in excluded)]
+        return kept[:limit]
+
+    breaking_rows = _keep(get_articles_by_priority(
+        1, status="summarized", limit=15, published_after=cutoff
+    ), 3)
+    general_rows = _keep(get_articles_by_priority(
+        2, status="summarized", limit=25, published_after=cutoff
+    ), 5)
 
     articles: List[Dict[str, Any]] = []
     articles.extend(_article_row_to_dict(row, "breaking") for row in breaking_rows)
     articles.extend(_article_row_to_dict(row, "general") for row in general_rows)
+
+    # Nothing fresh to show (for example, Ollama was unreachable so nothing got
+    # summarized). Keep the last good file instead of replacing it with an
+    # empty list, which would leave the Live Demo blank.
+    if not articles:
+        return {"breaking": 0, "general": 0, "skipped": True}
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
 

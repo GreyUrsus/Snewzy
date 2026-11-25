@@ -17,6 +17,11 @@ class KeywordsConfig(BaseModel):
     priority_1: list[str] = Field(default_factory=list)
     priority_2: list[str] = Field(default_factory=list)
     priority_3: list[str] = Field(default_factory=list)
+    # Articles whose title contains any of these words are never saved or
+    # shown on the website (shopping coupon posts from some feeds, mainly).
+    exclude_titles: list[str] = Field(
+        default_factory=lambda: ["coupon", "promo code", "discount code"]
+    )
 
 class APIConfig(BaseModel):
     """AI service configuration."""

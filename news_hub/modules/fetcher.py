@@ -39,6 +39,11 @@ def calculate_priority(title: str, content: str, keywords) -> int:
     # Check if site has priority_boost set (overriding all else)
     return 2  # General news
 
+def is_excluded(title: str, keywords) -> bool:
+    """True when the title has a word from keywords.exclude_titles (e.g. "coupon")."""
+    lowered = title.lower()
+    return any(word.lower() in lowered for word in getattr(keywords, "exclude_titles", []))
+
 def process_site(site: SiteConfig, keywords, max_articles: int) -> Tuple[int, int]:
     """Process a single news site.
 
@@ -65,6 +70,10 @@ def process_site(site: SiteConfig, keywords, max_articles: int) -> Tuple[int, in
         content = entry.get("summary", "") or entry.get("description", "")
         
         if not url:
+            continue
+        if is_excluded(title, keywords):
+            # Shopping/coupon posts: don't save, summarize or show them
+            skipped += 1
             continue
         if article_exists(url):
             skipped += 1

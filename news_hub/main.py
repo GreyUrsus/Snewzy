@@ -128,15 +128,29 @@ def fetch_and_summarize():
     # Export latest summarized articles for the website
     print("\n[5/6] Exporting for website...")
     export_succeeded = False
+    export_skipped = False
     try:
         export_results = export_for_website(config)
         export_succeeded = True
-        print(
-            f"  ✓ Exported {export_results['breaking']} breaking, "
-            f"{export_results['general']} general articles"
-        )
+        if export_results.get("skipped"):
+            export_skipped = True
+            print("  ⚠ No fresh summaries; kept the existing news file")
+        else:
+            print(
+                f"  ✓ Exported {export_results['breaking']} breaking, "
+                f"{export_results['general']} general articles"
+            )
     except Exception as e:
         print(f"  ✗ Export failed: {e}")
+    
+    # Nothing new to publish: skip the deploy so the live site keeps its news.
+    if export_skipped:
+        print("\n[6/6] Deploying to Cloudflare...")
+        print("  - Skipped (nothing new to publish)")
+        print("\n" + "=" * 50)
+        print("Update complete!")
+        print("=" * 50)
+        return
     
     # Deploy the updated website to Cloudflare (best-effort; never fails the cycle)
     print("\n[6/6] Deploying to Cloudflare...")
