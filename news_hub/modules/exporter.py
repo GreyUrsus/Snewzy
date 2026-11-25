@@ -104,7 +104,9 @@ def export_for_website(config: Optional[Any] = None) -> Dict[str, int]:
 
     Returns:
         A dict summarizing the export, e.g. {"breaking": 3, "general": 5},
-        with counts of articles actually written per tier.
+        with counts of articles actually written per tier. When there are no
+        fresh summarized articles, nothing is written and the dict also has
+        "skipped": True.
     """
     settings = getattr(config, "settings", None)
     max_age_days = getattr(settings, "export_max_age_days", DEFAULT_MAX_AGE_DAYS)
@@ -125,6 +127,12 @@ def export_for_website(config: Optional[Any] = None) -> Dict[str, int]:
     articles: List[Dict[str, Any]] = []
     articles.extend(_article_row_to_dict(row, "breaking") for row in breaking_rows)
     articles.extend(_article_row_to_dict(row, "general") for row in general_rows)
+
+    # Nothing fresh to show (for example, Ollama was unreachable so nothing got
+    # summarized). Keep the last good file instead of replacing it with an
+    # empty list, which would leave the Live Demo blank.
+    if not articles:
+        return {"breaking": 0, "general": 0, "skipped": True}
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
