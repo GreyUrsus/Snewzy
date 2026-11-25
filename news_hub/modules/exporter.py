@@ -117,12 +117,22 @@ def export_for_website(config: Optional[Any] = None) -> Dict[str, int]:
     now = datetime.now(timezone.utc)
     cutoff = (now - timedelta(days=max_age_days)).isoformat()
 
-    breaking_rows = get_articles_by_priority(
-        1, status="summarized", limit=3, published_after=cutoff
-    )
-    general_rows = get_articles_by_priority(
-        2, status="summarized", limit=5, published_after=cutoff
-    )
+    # Leave out titles matching keywords.exclude_titles (coupon posts), in
+    # case some were saved before that filter existed. Ask the database for
+    # a few extra rows so the panels still fill up after filtering.
+    keywords = getattr(config, "keywords", None)
+    excluded = [w.lower() for w in getattr(keywords, "exclude_titles", ["coupon", "promo code", "discount code"])]
+
+    def _keep(rows, limit):
+        kept = [r for r in rows if not any(w in (r[_IDX_TITLE] or "").lower() for w in excluded)]
+        return kept[:limit]
+
+    breaking_rows = _keep(get_articles_by_priority(
+        1, status="summarized", limit=15, published_after=cutoff
+    ), 3)
+    general_rows = _keep(get_articles_by_priority(
+        2, status="summarized", limit=25, published_after=cutoff
+    ), 5)
 
     articles: List[Dict[str, Any]] = []
     articles.extend(_article_row_to_dict(row, "breaking") for row in breaking_rows)
