@@ -4,6 +4,7 @@ import feedparser
 from typing import List, Tuple, Dict
 from datetime import datetime
 from .database import insert_article, article_exists
+from .dates import entry_published_iso
 from .config_loader import AppConfig, SiteConfig, KeywordsConfig
 
 
@@ -58,7 +59,9 @@ def process_site(site: SiteConfig, keywords, max_articles: int) -> Tuple[int, in
     for entry in entries[:max_articles]:
         title = entry.get("title", "No Title")
         url = entry.get("link", "")
-        published = entry.get("published", "")
+        # Store the date as ISO 8601 UTC text (see dates.py) so that sorting
+        # by published_date really means newest first.
+        published = entry_published_iso(entry)
         content = entry.get("summary", "") or entry.get("description", "")
         
         if not url:

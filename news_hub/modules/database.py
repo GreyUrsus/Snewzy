@@ -5,6 +5,8 @@ from pathlib import Path
 from datetime import datetime
 from typing import Optional, List, Tuple
 
+from .dates import is_iso, text_to_iso
+
 
 #Database file location: news_hub/data/news_hub.db
 DATABASE_PATH = Path.home() / "snewzy_data" / "news_hub.db"
@@ -50,6 +52,22 @@ def init_database() -> None:
 
     # One-time migration to reclassify any existing priority 3 articles as priority 2
     cursor.execute("UPDATE articles SET priority = 2 WHERE priority = 3")
+
+    # One-time migration: older rows stored the feed's raw date text
+    # (e.g. "Wed, 25 Mar 2026 ..."), which sorts alphabetically, not by time.
+    # Rewrite those rows to ISO 8601 UTC. Rows already in ISO form are skipped,
+    # so this is cheap to run on every start-up. Rows whose date can't be read
+    # fall back to when Snewzy first saved them (created_at).
+    cursor.execute("SELECT id, published_date, created_at FROM articles")
+    for article_id, published_date, created_at in cursor.fetchall():
+        if is_iso(published_date):
+            continue
+        fixed = text_to_iso(published_date) or text_to_iso(created_at)
+        if fixed:
+            cursor.execute(
+                "UPDATE articles SET published_date = ? WHERE id = ?",
+                (fixed, article_id),
+            )
 
     conn.commit()
     conn.close( )
@@ -102,13 +120,17 @@ def make_article_as_read(article_id: int) -> None:
       conn.close()
     
 
-def get_articles_by_priority(priority: int, status: str = None, limit: int = None) -> List[Tuple]:
+def get_articles_by_priority(priority: int, status: str = None, limit: int = None,
+                             published_after: Optional[str] = None) -> List[Tuple]:
         """Retrieve articles filtered by priority and optional status.
         
         Args:
             priority: Priority level (1, 2, or 3)
             status: Optional status filter ('pending', 'summarized', 'read')
             limit: Maximum number of articles to return
+            published_after: Optional ISO 8601 date/time text. When given,
+                only articles published at or after it are returned (used
+                by the website export to leave out stale stories).
             
         Returns:
             List of article tuples from database
@@ -117,20 +139,25 @@ def get_articles_by_priority(priority: int, status: str = None, limit: int = Non
         conn = sqlite3.connect(DATABASE_PATH)
         cursor = conn.cursor()
 
+        # Build the WHERE clause from whichever filters were passed.
+        # published_date is stored as ISO 8601 text (see dates.py), so a plain
+        # text comparison (>=) and ORDER BY both follow real time order.
+        conditions = ["priority = ?"]
+        params: list = [priority]
         if status:
-            cursor.execute("""
-                SELECT * FROM articles
-                WHERE priority = ? AND status = ?
-                ORDER BY published_date DESC
-                LIMIT ?
-            """, (priority, status, limit or 9999))
-        else:
-            cursor.execute("""
-                SELECT * FROM articles
-                WHERE priority = ?
-                ORDER BY published_date DESC
-                LIMIT ?
-            """, (priority, limit or 9999))
+            conditions.append("status = ?")
+            params.append(status)
+        if published_after:
+            conditions.append("published_date >= ?")
+            params.append(published_after)
+        params.append(limit or 9999)
+
+        cursor.execute(f"""
+            SELECT * FROM articles
+            WHERE {" AND ".join(conditions)}
+            ORDER BY published_date DESC
+            LIMIT ?
+        """, params)
 
         results = cursor.fetchall()
         conn.close()

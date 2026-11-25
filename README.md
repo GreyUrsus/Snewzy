@@ -56,6 +56,40 @@ python3 -m news_hub.display
 **Automated mode:**
 The GUI's 6-hour timer handles this automatically. Manual refresh button triggers an immediate update and resets the countdown.
 
+## Run it on a schedule (no GUI needed)
+
+The 6-hour timer inside the GUI only runs while the desktop app is open, which
+is why the website's Live Demo can go stale. To keep it current on its own,
+install the systemd user timer in `deploy/` on the machine that runs Snewzy:
+
+```bash
+mkdir -p ~/.config/systemd/user
+cp deploy/snewzy-update.service deploy/snewzy-update.timer ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now snewzy-update.timer
+# keep user timers running after you log out:
+loginctl enable-linger "$USER"
+```
+
+Check it with `systemctl --user list-timers` and see the last run's output with
+`journalctl --user -u snewzy-update.service -n 50`. Stop it any time with
+`systemctl --user disable --now snewzy-update.timer`.
+
+Edit the paths in `deploy/snewzy-update.service` first if your copy of Snewzy
+isn't at `~/workspace/projects/snewzy`. Ollama has to be reachable when it runs.
+
+### Settings for the website export (optional, in `config.json`)
+
+- `settings.export_max_age_days` (default 7): only stories newer than this go
+  to the website.
+- `settings.website_dir`: the website folder. When set, the export writes
+  `data/latest_news.json` there and `wrangler deploy` runs in the same folder.
+- `api.endpoint`: Ollama's address. The `OLLAMA_HOST` environment variable
+  overrides it.
+
+Each export also writes `data/latest_news_meta.json` with an `updated_at`
+time, which the website can show as "Last updated".
+
 ## Project Structure
 
 ```

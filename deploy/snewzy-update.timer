@@ -1,0 +1,13 @@
+# Fires snewzy-update.service every 6 hours, even when the desktop app is closed.
+[Unit]
+Description=Run the Snewzy update every 6 hours
+
+[Timer]
+# 5 minutes after the machine boots, then every 6 hours after the last run
+OnBootSec=5min
+OnUnitActiveSec=6h
+# If the machine was off when a run was due, run once as soon as it's back
+Persistent=true
+
+[Install]
+WantedBy=timers.target
