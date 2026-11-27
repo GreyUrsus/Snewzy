@@ -7,7 +7,7 @@ from typing import List, Tuple, Dict, Optional
 
 import requests
 
-from .database import get_articles_by_priority, update_article_summary
+from .database import get_articles_by_priority, update_article_summary, mark_article_status
 from .config_loader import AppConfig
 
 
@@ -35,6 +35,8 @@ def create_summary_prompt(title: str, content: str, priority: int) -> str:
     prompt = f"""Today is {today}. Summarize this news article.
 Only describe what the article says. Do not comment on its date, whether it
 is real, or whether it seems to be in the future.
+Reply with only the two sections shown under Format. Do not explain what you
+are going to do, and do not mention these instructions.
 
 Priority: {priority} ({importance})
 
@@ -70,8 +72,38 @@ def resolve_endpoint(config_endpoint: Optional[str] = None) -> str:
 
 
 def strip_thinking(text: str) -> str:
-    """Remove any <think>...</think> block a reasoning model left in its reply."""
-    return re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+    """Remove any <think>...</think> block a reasoning model left in its reply.
+
+    qwen3 sometimes drops the opening <think> tag and only writes the closing
+    one, so anything before a lone </think> is thrown away too.
+    """
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
+    if "</think>" in text:
+        text = text.split("</think>")[-1]
+    return text.strip()
+
+
+# Phrases that show the model wrote its own notes ("Hmm, the user wants me to
+# summarize...") instead of a summary. One of these once reached the public
+# website, so any summary that matches is rejected and never saved.
+_MODEL_NOTES = re.compile(
+    # Opens like someone thinking aloud
+    r"^\s*(hmm+|okay|ok|alright|so,|let me|let's see|first,|i need to|i'll|i will|i should|i must)\b"
+    # Talks about the person asking or the instructions
+    r"|\bthe user (wants|asked|has asked|is asking|specified|requested|said|mentioned)\b"
+    r"|\b(they've|they have) (asked|specified|told|requested|mentioned)\b"
+    r"|\b(these|my) instructions\b|\bthe prompt (says|asks|said|asked|wants)\b"
+    # Talks about doing the task
+    r"|\b(summar(y|ize|ise|izing|ising)) (of )?(this|the) (news )?article\b"
+    r"|\bthe priority is (critical|moderate|general)\b"
+    r"|\bi (shouldn't|should not|need to|have to|must) (comment|mention|summar|be|focus|keep|make)",
+    re.IGNORECASE,
+)
+
+
+def looks_like_model_notes(text: Optional[str]) -> bool:
+    """True when text reads like the model talking about the task, not the news."""
+    return bool(text) and bool(_MODEL_NOTES.search(text))
 
 
 def call_ollama(prompt: str, model: str = "qwen3:4b",
@@ -126,10 +158,15 @@ def trim_to_sentence(text: str, max_chars: int = 400) -> str:
     return cut.rsplit(" ", 1)[0] + "…"
 
 
-def parse_response(response: str) -> Tuple[str, str]:
-    """Parse response into summary and bullets."""
+def parse_response(response: str) -> Tuple[Optional[str], Optional[str]]:
+    """Parse response into summary and bullets.
+
+    Returns (None, None) when the reply can't be trusted: it's empty, it has no
+    SUMMARY: section, or the summary reads like the model's own notes. The
+    caller then retries or skips the article instead of publishing it.
+    """
     if not response:
-        return "Summary unavailable.", "Key points unavailable."
+        return None, None
     
     lines = response.split("\n")
     summary_lines: List[str] = []
@@ -156,9 +193,12 @@ def parse_response(response: str) -> Tuple[str, str]:
     
     summary = " ".join(summary_lines)
     if not summary:
-        # Model ignored the format: use its text, cut at a sentence end
-        summary = response
+        # Model ignored the format. Its raw text is often its own reasoning
+        # ("Hmm, the user wants me to..."), so never publish it as a summary.
+        return None, None
     summary = trim_to_sentence(summary)
+    if looks_like_model_notes(summary):
+        return None, None
     
     bullet_text = "\n".join(f"- {b}" for b in bullets) if bullets else "See summary."
     
@@ -175,14 +215,24 @@ def summarize_article(article: Tuple, model: str, endpoint: Optional[str] = None
     print(f"    Summarizing: {title[:50]}...")
     
     prompt = create_summary_prompt(title, content, priority)
-    response = call_ollama(prompt, model, endpoint)
-    
-    if not response:
-        return False
-    
-    summary, bullets = parse_response(response)
-    update_article_summary(article_id, summary, bullets)
-    return True
+
+    # Two tries: a small model that wanders off-format once usually gets it
+    # right the second time.
+    for attempt in (1, 2):
+        response = call_ollama(prompt, model, endpoint)
+        if not response:
+            # Ollama unreachable or errored: leave it pending for the next run.
+            return False
+        summary, bullets = parse_response(response)
+        if summary:
+            update_article_summary(article_id, summary, bullets)
+            return True
+        print(f"    Reply was not a usable summary (try {attempt} of 2)")
+
+    # Both replies were unusable. Mark the article so it isn't retried forever
+    # (blocking newer articles) and is never exported to the website.
+    mark_article_status(article_id, "unsummarized")
+    return False
 
 
 def run_summarizer(config: AppConfig, max_per_priority: int = 5) -> Dict[str, int]:

@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from .database import get_articles_by_priority
+from .summarizer import looks_like_model_notes
 
 # Fixed output location: the Grey Ursus Consulting website's data folder,
 # so the static site (website/js/news-panels.js) reads the same file this
@@ -125,6 +126,9 @@ def export_for_website(config: Optional[Any] = None) -> Dict[str, int]:
 
     def _keep(rows, limit):
         kept = [r for r in rows if not any(w in (r[_IDX_TITLE] or "").lower() for w in excluded)]
+        # Also leave out any summary saved before the model-notes check existed
+        # (e.g. "Hmm, the user wants me to summarize..."), so it never reaches the site.
+        kept = [r for r in kept if not looks_like_model_notes(r[_IDX_SUMMARY])]
         return kept[:limit]
 
     breaking_rows = _keep(get_articles_by_priority(
