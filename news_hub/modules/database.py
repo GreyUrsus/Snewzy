@@ -163,6 +163,15 @@ def get_articles_by_priority(priority: int, status: str = None, limit: int = Non
         conn.close()
         return results
 
+def mark_article_status(article_id: int, status: str) -> None:
+    """Set an article's status, e.g. 'unsummarized' when no usable summary came back."""
+    conn = sqlite3.connect(DATABASE_PATH)
+    cursor = conn.cursor()
+    cursor.execute("UPDATE articles SET status = ? WHERE id = ?", (status, article_id))
+    conn.commit()
+    conn.close()
+
+
 def update_article_summary(article_id: int, summary: str,
                                bullet_points: str) -> None:
     """Update an article with its summary and mark as summarized."""
